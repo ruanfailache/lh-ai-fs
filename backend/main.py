@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
+
+from llm import OpenAIStructuredLLM
+from pipeline import run_pipeline
 
 app = FastAPI()
 
@@ -26,5 +29,9 @@ def load_documents() -> dict[str, str]:
 @app.post("/analyze")
 async def analyze():
     documents = load_documents()
-    # TODO: Build your multi-agent pipeline here
-    return {"report": None}
+    msj_text = documents.get("motion_for_summary_judgment")
+    if msj_text is None:
+        raise HTTPException(status_code=500, detail="motion_for_summary_judgment.txt not found")
+
+    report = run_pipeline(msj_text, llm=OpenAIStructuredLLM())
+    return report
