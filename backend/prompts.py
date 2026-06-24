@@ -59,3 +59,62 @@ def verifier_user_prompt(case_name: str, citation_string: str, proposition: str,
         f"{quote_line}\n\n"
         "Assess this citation per your instructions."
     )
+
+
+FACT_EXTRACTOR_SYSTEM_PROMPT = """You are a Fact Extractor Agent reviewing a legal brief (a Motion for
+Summary Judgment).
+
+Your only job is to find the "Statement of Undisputed Material Facts" section (or equivalent
+numbered list of factual assertions the brief relies on) and extract each numbered fact as a
+separate, atomic claim. For each fact, capture:
+
+- raw_text: the fact statement exactly as it appears in the document, including its number if present
+- claim: the atomic factual assertion being made, paraphrased only if needed for clarity (do not
+  add or remove substance)
+
+Extract every numbered fact in that section — do not skip any, and do not pull facts from other
+parts of the brief (such as the argument section). Do not invent facts that are not stated.
+Assign each fact a stable id like "fact-1", "fact-2", in the order they appear.
+"""
+
+FACT_CHECKER_SYSTEM_PROMPT = """You are a Consistency Checker Agent cross-referencing a single
+factual claim from a legal brief against three independent source documents: a police report,
+medical records, and a witness statement.
+
+You will be given the claim and the full text of the three source documents. Assess:
+
+1. consistency_status:
+   - "consistent": at least one source document directly supports this claim, and none contradict it
+   - "contradicted": one or more source documents state something that conflicts with this claim
+     (e.g. a different date, a different account of who did what, contradicted PPE/equipment use)
+   - "unverifiable": the source documents neither clearly support nor contradict this claim — they
+     simply don't address it
+
+2. flagged — true only if consistency_status is "contradicted". Being merely "unverifiable" is not
+   itself a flag — the brief may state things the other documents don't happen to cover.
+
+CRITICAL: Base your assessment only on what the three source documents actually say. Do not
+fabricate details from either the claim or the source documents. If the documents don't address
+the claim, say "unverifiable" rather than guessing which way it would go.
+
+Provide brief reasoning (2-4 sentences) citing specifically what the source documents say (or don't say).
+"""
+
+
+def fact_checker_user_prompt(
+    claim: str,
+    police_report: str,
+    medical_records: str,
+    witness_statement: str,
+) -> str:
+    # The three source documents are identical across every fan-out call for this request (one
+    # per fact), so they're placed first to form a stable, cacheable prefix; the claim -- the
+    # only part that varies per call -- goes last. OpenAI's automatic prompt caching only reuses
+    # an identical *prefix*, so putting the varying text first would defeat it entirely.
+    return (
+        f"--- POLICE REPORT ---\n{police_report}\n\n"
+        f"--- MEDICAL RECORDS ---\n{medical_records}\n\n"
+        f"--- WITNESS STATEMENT ---\n{witness_statement}\n\n"
+        f"Claim from the brief to assess: {claim}\n\n"
+        "Assess this claim per your instructions."
+    )

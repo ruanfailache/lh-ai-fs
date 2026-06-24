@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 SupportStatus = Literal["supports", "contradicts", "unsupported", "uncertain"]
 QuoteAccuracy = Literal["accurate", "altered", "fabricated", "no_quote", "uncertain"]
+ConsistencyStatus = Literal["consistent", "contradicted", "unverifiable"]
 
 
 class Citation(BaseModel):
@@ -42,7 +43,40 @@ class CitationVerdict(BaseModel):
     flagged: bool
 
 
+class FactClaim(BaseModel):
+    id: str = Field(description="Stable identifier for this fact, e.g. 'fact-1'")
+    raw_text: str = Field(description="The fact statement as it appears in the MSJ's Statement of Undisputed Material Facts")
+    claim: str = Field(description="The atomic factual claim being made, paraphrased if needed for clarity")
+
+
+class FactClaimList(BaseModel):
+    facts: list[FactClaim]
+
+
+class ConsistencyAssessment(BaseModel):
+    """What the Consistency Checker Agent produces for a single fact (no id — added by the pipeline)."""
+
+    consistency_status: ConsistencyStatus = Field(
+        description="Whether the fact is consistent with, contradicted by, or unverifiable against the other documents"
+    )
+    reasoning: str = Field(description="Brief explanation, citing what the other documents say")
+    flagged: bool = Field(description="True if this fact should be flagged as a likely problem")
+
+
+class FactCheckResult(BaseModel):
+    fact_id: str
+    consistency_status: ConsistencyStatus
+    reasoning: str
+    flagged: bool
+
+
 class AnalysisReport(BaseModel):
     citations: list[Citation]
     verdicts: list[CitationVerdict]
-    flagged_count: int
+    facts: list[FactClaim]
+    fact_checks: list[FactCheckResult]
+    citation_flagged_count: int
+    fact_flagged_count: int
+    errors: list[str] = Field(
+        default_factory=list, description="Node-level failures (e.g. a single citation's verification call erroring out)"
+    )

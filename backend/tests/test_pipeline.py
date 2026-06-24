@@ -1,6 +1,20 @@
 from llm import FakeStructuredLLM
-from models import Citation, CitationList, VerdictAssessment
+from models import (
+    Citation,
+    CitationList,
+    ConsistencyAssessment,
+    FactClaim,
+    FactClaimList,
+    VerdictAssessment,
+)
 from pipeline import run_pipeline
+
+DOCUMENTS = {
+    "motion_for_summary_judgment": "dummy MSJ text",
+    "police_report": "dummy police report text",
+    "medical_records_excerpt": "dummy medical records text",
+    "witness_statement": "dummy witness statement text",
+}
 
 
 def make_fake_llm() -> FakeStructuredLLM:
@@ -48,17 +62,53 @@ def make_fake_llm() -> FakeStructuredLLM:
                 return verdict
         raise AssertionError(f"No fake verdict registered for prompt: {prompt}")
 
-    # extract_citations only runs once, so a plain FIFO list works there.
+    facts = FactClaimList(
+        facts=[
+            FactClaim(
+                id="fact-1",
+                raw_text="3. On or about March 14, 2021, Rivera was working on a scaffolding assembly...",
+                claim="The incident occurred on March 14, 2021.",
+            ),
+            FactClaim(
+                id="fact-2",
+                raw_text="4. Rivera was not wearing required personal protective equipment...",
+                claim="Rivera was not wearing required PPE at the time of the incident.",
+            ),
+        ]
+    )
+    fact_checks_by_claim = {
+        "March 14, 2021": ConsistencyAssessment(
+            consistency_status="contradicted",
+            reasoning="The police report and medical records both state the incident occurred on March 12, 2021.",
+            flagged=True,
+        ),
+        "PPE": ConsistencyAssessment(
+            consistency_status="contradicted",
+            reasoning="The police report and witness statement both say Rivera was wearing a hard hat, harness, and vest.",
+            flagged=True,
+        ),
+    }
+
+    def fact_check_matcher(messages: list[dict]) -> ConsistencyAssessment:
+        prompt = messages[-1]["content"]
+        for needle, result in fact_checks_by_claim.items():
+            if needle in prompt:
+                return result
+        raise AssertionError(f"No fake fact check registered for prompt: {prompt}")
+
+    # extract_citations/extract_facts only run once each, so plain FIFO lists work there.
     return FakeStructuredLLM(
         {
             "CitationList": [citations],
             "VerdictAssessment": verify_matcher,
+            "FactClaimList": [facts],
+            "ConsistencyAssessment": fact_check_matcher,
         }
     )
 
 
 def test_pipeline_extracts_and_verifies_all_citations():
-    report = run_pipeline("dummy MSJ text", llm=make_fake_llm())
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
 
     assert len(report.citations) == 2
     assert {c.id for c in report.citations} == {"cite-1", "cite-2"}
@@ -66,7 +116,7 @@ def test_pipeline_extracts_and_verifies_all_citations():
 
 
 def test_pipeline_flags_altered_quote():
-    report = run_pipeline("dummy MSJ text", llm=make_fake_llm())
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
 
     verdict_by_id = {v.citation_id: v for v in report.verdicts}
     assert verdict_by_id["cite-1"].flagged is True
@@ -74,14 +124,86 @@ def test_pipeline_flags_altered_quote():
 
 
 def test_pipeline_does_not_flag_merely_uncertain_citation():
-    report = run_pipeline("dummy MSJ text", llm=make_fake_llm())
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
 
     verdict_by_id = {v.citation_id: v for v in report.verdicts}
     assert verdict_by_id["cite-2"].support_status == "uncertain"
     assert verdict_by_id["cite-2"].flagged is False
 
 
-def test_pipeline_computes_flagged_count():
-    report = run_pipeline("dummy MSJ text", llm=make_fake_llm())
+def test_pipeline_extracts_and_checks_all_facts():
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
 
-    assert report.flagged_count == 1
+    assert len(report.facts) == 2
+    assert {f.id for f in report.facts} == {"fact-1", "fact-2"}
+    assert len(report.fact_checks) == 2
+
+
+def test_pipeline_flags_contradicted_fact():
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
+
+    check_by_id = {c.fact_id: c for c in report.fact_checks}
+    assert check_by_id["fact-1"].consistency_status == "contradicted"
+    assert check_by_id["fact-1"].flagged is True
+
+
+def test_pipeline_computes_flagged_counts():
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
+
+    assert report.citation_flagged_count == 1
+    assert report.fact_flagged_count == 2
+
+
+def test_pipeline_surfaces_node_failures_without_dropping_the_rest():
+    citations = CitationList(
+        citations=[
+            Citation(
+                id="cite-1",
+                raw_text="Privette v. Superior Court",
+                case_name="Privette v. Superior Court",
+                citation_string="5 Cal.4th 689",
+                proposition="p",
+                quoted_text=None,
+            )
+        ]
+    )
+
+    def explode(_messages: list[dict]) -> VerdictAssessment:
+        raise RuntimeError("simulated LLM failure")
+
+    llm = FakeStructuredLLM(
+        {
+            "CitationList": [citations],
+            "VerdictAssessment": explode,
+            "FactClaimList": [FactClaimList(facts=[])],
+            "ConsistencyAssessment": [],
+        }
+    )
+
+    report = run_pipeline(DOCUMENTS, llm=llm)
+
+    assert report.citations[0].id == "cite-1"
+    assert report.verdicts == []
+    assert len(report.errors) == 1
+    assert "cite-1" in report.errors[0]
+    assert "simulated LLM failure" in report.errors[0]
+
+
+def test_pipeline_survives_extraction_failure():
+    def explode_extraction(_messages: list[dict]) -> CitationList:
+        raise RuntimeError("simulated extraction failure")
+
+    llm = FakeStructuredLLM(
+        {
+            "CitationList": explode_extraction,
+            "VerdictAssessment": [],
+            "FactClaimList": [FactClaimList(facts=[])],
+            "ConsistencyAssessment": [],
+        }
+    )
+
+    report = run_pipeline(DOCUMENTS, llm=llm)
+
+    assert report.citations == []
+    assert report.verdicts == []
+    assert any("Citation extraction failed" in err for err in report.errors)

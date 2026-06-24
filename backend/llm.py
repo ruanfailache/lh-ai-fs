@@ -1,10 +1,11 @@
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import Callable, TypeVar
 
 from dotenv import load_dotenv
 from langsmith.wrappers import wrap_openai
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pydantic import BaseModel
 
 load_dotenv()
@@ -36,20 +37,34 @@ class StructuredLLM(ABC):
 
 
 class OpenAIStructuredLLM(StructuredLLM):
-    def __init__(self, model: str = "gpt-4o", temperature: float = 0):
+    def __init__(self, model: str = "gpt-4o", temperature: float = 0, max_retries: int = 3):
         # wrap_openai is a no-op unless LANGCHAIN_TRACING_V2=true is set, in which case it
         # reports each call (prompt, response, tokens, latency) as an LLM span in LangSmith.
         self.client = wrap_openai(OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
         self.model = model
         self.temperature = temperature
+        self.max_retries = max_retries
 
     def call_structured(self, messages: list[dict], schema: type[SchemaT]) -> SchemaT:
-        response = self.client.chat.completions.parse(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            response_format=schema,
-        )
+        # The graph fans out several calls concurrently (one per citation/fact), which can
+        # exceed low requests-per-minute limits on some accounts/tiers. Retry with backoff
+        # rather than letting a transient 429 take down the whole node.
+        attempt = 0
+        while True:
+            try:
+                response = self.client.chat.completions.parse(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    response_format=schema,
+                )
+                break
+            except RateLimitError:
+                attempt += 1
+                if attempt > self.max_retries:
+                    raise
+                time.sleep(min(2**attempt, 30))
+
         parsed = response.choices[0].message.parsed
         if parsed is None:
             raise ValueError(f"Model refused or failed to produce a {schema.__name__}")

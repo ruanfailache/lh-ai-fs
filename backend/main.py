@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pathlib import Path
 
+from document_loader import load_documents
 from llm import OpenAIStructuredLLM
 from pipeline import run_pipeline
 
@@ -15,23 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DOCUMENTS_DIR = Path(__file__).parent / "documents"
-
-
-def load_documents() -> dict[str, str]:
-    """Load all documents from the documents directory."""
-    documents = {}
-    for file_path in DOCUMENTS_DIR.glob("*.txt"):
-        documents[file_path.stem] = file_path.read_text()
-    return documents
-
 
 @app.post("/analyze")
 async def analyze():
     documents = load_documents()
-    msj_text = documents.get("motion_for_summary_judgment")
-    if msj_text is None:
+    if "motion_for_summary_judgment" not in documents:
         raise HTTPException(status_code=500, detail="motion_for_summary_judgment.txt not found")
 
-    report = run_pipeline(msj_text, llm=OpenAIStructuredLLM())
+    report = run_pipeline(documents, llm=OpenAIStructuredLLM())
     return report

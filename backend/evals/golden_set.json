@@ -1,0 +1,109 @@
+{
+  "_readme": "Hand-curated expectations for the Rivera v. Harmon Construction Group fixture documents. 'confidence' reflects how sure a human reviewer is about the expected_flagged verdict, not how the pipeline should hedge. Matching is done by substring (case-insensitive) against case_name (citations) or raw_text/claim (facts).",
+  "citations": [
+    {
+      "case_name_contains": "Privette",
+      "expected_flagged": true,
+      "confidence": "high",
+      "note": "Real case, but the quoted language ('A hirer is never liable...') drops the well-known retained-control/affirmative-contribution exceptions (Hooker v. Dept. of Transportation, McKown v. Wal-Mart). The brief states an absolute rule that does not exist."
+    },
+    {
+      "case_name_contains": "Whitmore",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Not a case we can verify exists. Generic, plausible-sounding name pattern; flagging here is a guess, not confirmed via external case law lookup."
+    },
+    {
+      "case_name_contains": "Kellerman",
+      "expected_flagged": true,
+      "confidence": "medium",
+      "note": "The quoted 'rebuttable presumption' rule from OSHA compliance is not an established negligence doctrine; OSHA compliance is at most evidence of due care, not a presumption-shifting rule. Whether or not this specific case exists, the proposition it's cited for is an overstatement."
+    },
+    {
+      "case_name_contains": "Seabright",
+      "expected_flagged": true,
+      "confidence": "medium",
+      "note": "Real case (Seabright Insurance Co. v. US Airways (2011) 52 Cal.4th 590), but it concerns the Privette doctrine's extension to OSHA/Cal-OSHA violations (hirer not vicariously liable for a contractor's regulatory violations) -- not a general rule that regulatory compliance is 'highly probative' of due care in ordinary negligence."
+    },
+    {
+      "case_name_contains": "Torres",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Footnote string cite supporting the same overstated proposition as Kellerman/Seabright (that OSHA compliance 'effectively insulates' Harmon from tort liability) -- no real case stands for blanket immunity from regulatory compliance alone."
+    },
+    {
+      "case_name_contains": "Blackwell",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Same footnote string cite issue as Torres -- cited for an overstated proposition, existence unverified."
+    },
+    {
+      "case_name_contains": "Dixon",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Same footnote string cite issue as Torres. Out-of-jurisdiction (Tex. App.) case cited for a California tort proposition without explanation."
+    },
+    {
+      "case_name_contains": "Okafor",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Same footnote string cite issue as Torres. Out-of-jurisdiction (Fla. Dist. Ct. App.) case cited for a California tort proposition without explanation."
+    },
+    {
+      "case_name_contains": "Nguyen",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Same footnote string cite issue as Torres."
+    },
+    {
+      "case_name_contains": "Reeves",
+      "expected_flagged": true,
+      "confidence": "low",
+      "note": "Same footnote string cite issue as Torres."
+    }
+  ],
+  "facts": [
+    {
+      "fact_contains": "Harmon served as the general contractor",
+      "expected_flagged": false,
+      "expected_consistency_status": "consistent",
+      "confidence": "high",
+      "note": "Confirmed by the police report (Harmon Construction Group, foreman Ray Donner) and witness statement."
+    },
+    {
+      "fact_contains": "Apex Staffing Solutions",
+      "expected_flagged": false,
+      "expected_consistency_status": "consistent",
+      "confidence": "high",
+      "note": "Confirmed by the police report and witness statement (Rivera employed by Apex as a journeyman scaffolder)."
+    },
+    {
+      "fact_contains": "March 14, 2021",
+      "expected_flagged": true,
+      "expected_consistency_status": "contradicted",
+      "confidence": "high",
+      "note": "Police report, medical records, and witness statement all consistently date the incident to March 12, 2021, not March 14."
+    },
+    {
+      "fact_contains": "not wearing required personal protective equipment",
+      "expected_flagged": true,
+      "expected_consistency_status": "contradicted",
+      "confidence": "high",
+      "note": "Police report and witness statement both state Rivera was wearing a hard hat, harness, and high-visibility vest. The harness lanyard detached because its anchor point was part of the scaffolding section that collapsed -- not because Rivera lacked PPE."
+    },
+    {
+      "fact_contains": "active Injury and Illness Prevention Program",
+      "expected_flagged": false,
+      "expected_consistency_status": "unverifiable",
+      "confidence": "medium",
+      "note": "None of the three source documents address Harmon's IIPP or prior OSHA inspection history one way or the other -- the police report only notes Cal/OSHA was notified and a future investigation is expected, which neither confirms nor contradicts past compliance."
+    },
+    {
+      "fact_contains": "filed the instant action on March 10, 2023",
+      "expected_flagged": false,
+      "expected_consistency_status": "unverifiable",
+      "confidence": "high",
+      "note": "The filing date of the lawsuit is a court-record fact; none of the police report, medical records, or witness statement (all from 2021) address it."
+    }
+  ]
+}
