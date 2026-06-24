@@ -1,4 +1,10 @@
 import { useState } from 'react'
+import { analyzeCase } from './api'
+import JudicialMemoCard from './components/JudicialMemoCard'
+import SummaryBar from './components/SummaryBar'
+import CitationCard from './components/CitationCard'
+import FactCard from './components/FactCard'
+import './App.css'
 
 function App() {
   const [report, setReport] = useState(null)
@@ -11,16 +17,8 @@ function App() {
     setReport(null)
 
     try {
-      const response = await fetch('http://localhost:8002/analyze', {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`)
-      }
-
-      const data = await response.json()
-      setReport(data.report)
+      const data = await analyzeCase()
+      setReport(data)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -28,49 +26,53 @@ function App() {
     }
   }
 
-  return (
-    <div style={{ maxWidth: '800px', margin: '40px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>BS Detector</h1>
-      <p>Legal brief verification pipeline</p>
+  const verdictByCitationId = Object.fromEntries(
+    (report?.verdicts ?? []).map((v) => [v.citation_id, v])
+  )
+  const factCheckByFactId = Object.fromEntries(
+    (report?.fact_checks ?? []).map((fc) => [fc.fact_id, fc])
+  )
 
-      <button
-        onClick={runAnalysis}
-        disabled={loading}
-        style={{
-          padding: '10px 24px',
-          fontSize: '16px',
-          cursor: loading ? 'not-allowed' : 'pointer',
-        }}
-      >
+  return (
+    <div className="page">
+      <h1>BS Detector</h1>
+      <p className="subtitle">Legal brief verification pipeline</p>
+
+      <button onClick={runAnalysis} disabled={loading} className="run-button">
         {loading ? 'Analyzing...' : 'Run Analysis'}
       </button>
 
       {error && (
-        <div style={{ marginTop: '20px', color: 'red' }}>
+        <div className="error-banner">
           <strong>Error:</strong> {error}
         </div>
       )}
 
       {report && (
-        <div style={{ marginTop: '20px' }}>
-          <h2>Report</h2>
-          <pre style={{
-            background: '#f5f5f5',
-            padding: '20px',
-            borderRadius: '4px',
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-            wordWrap: 'break-word',
-          }}>
-            {typeof report === 'string' ? report : JSON.stringify(report, null, 2)}
-          </pre>
+        <div className="report">
+          <JudicialMemoCard memo={report.judicial_memo} />
+          <SummaryBar report={report} />
+
+          <section>
+            <h2>Citations</h2>
+            {report.citations.length === 0 && <p className="empty-state">No citations were found.</p>}
+            {report.citations.map((citation) => (
+              <CitationCard key={citation.id} citation={citation} verdict={verdictByCitationId[citation.id]} />
+            ))}
+          </section>
+
+          <section>
+            <h2>Facts</h2>
+            {report.facts.length === 0 && <p className="empty-state">No facts were found.</p>}
+            {report.facts.map((fact) => (
+              <FactCard key={fact.id} fact={fact} factCheck={factCheckByFactId[fact.id]} />
+            ))}
+          </section>
         </div>
       )}
 
       {report === null && !loading && !error && (
-        <p style={{ marginTop: '20px', color: '#888' }}>
-          Click "Run Analysis" to analyze the case documents.
-        </p>
+        <p className="empty-state">Click "Run Analysis" to analyze the case documents.</p>
       )}
     </div>
   )
