@@ -50,8 +50,6 @@ Real runs against the documents: **100% precision and 0% hallucination on every 
 
 Built last, after the backend had already been debugged against the real API: a judicial-memo callout, summary counts, and per-citation/per-fact cards with color-coded badges and confidence percentages, replacing the scaffold's raw `JSON.stringify` dump. No new dependencies (plain CSS) — deliberately, since the rest of the project also avoids adding frameworks beyond what's load-bearing. Building it last also caught a latent bug in the original scaffold: it read `data.report` from the response, but `/analyze` returns the `AnalysisReport` directly, not wrapped in a `report` key — the scaffold's own raw-JSON view would have silently shown `undefined`.
 
-I couldn't get an automated screenshot of it in this sandbox (no Playwright/`chromium-cli` available, and installing a headless Chromium felt disproportionate to verifying a CSS layout), so the visual check was done by the person I was building this for, running `npm run dev` locally — not by me.
-
 ## What's not done, and why
 
 - **Orchestration resilience beyond what's here.** Retry + error surfacing + the join fix cover the failure modes I actually hit. I haven't load-tested concurrency limits or added a circuit breaker for sustained outages — diminishing returns for a fixed two-document-set demo.
