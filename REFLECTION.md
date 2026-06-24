@@ -2,7 +2,7 @@
 
 ## Agent decomposition
 
-The pipeline has six LLM-backed roles, but only four of them are separate LangGraph nodes:
+The pipeline has six LLM-backed roles, but only five of them are separate LangGraph nodes -- the Confidence Scorer is invoked inline rather than as its own node (explained below):
 
 1. **Citation Extractor** — pulls every citation out of the MSJ (body + footnotes) into structured `Citation` objects.
 2. **Citation Verifier** — one call per citation (fanned out via `Send`), judges whether the cited authority actually supports the proposition and whether any direct quote is accurate.
@@ -40,16 +40,22 @@ I think this is the most useful thing in this document: none of these were caugh
 
 **Hallucination rate** is defined structurally, not semantically: an extracted citation/fact "hallucinates" if no run of its words is findable in the source document at all. This catches invented citations, not incorrect legal reasoning about real ones — a narrower, more honestly-scoped definition than "did the model get it right."
 
-Real runs against the documents: **100% precision, 0% hallucination, recall in the 25-58% range across runs** (see `backend/evals/last_run_results.json` for the latest). The recall variance itself is informative — some of it is genuine model non-determinism (gpt-4o at temperature 0 isn't perfectly deterministic), and some of it, before the rate-limit fixes above, was nodes silently failing and being scored as "not flagged" by default. I'd treat the precision and hallucination numbers as the trustworthy signal here, and the recall number as directionally correct but noisy until run several times.
+Real runs against the documents: **100% precision and 0% hallucination on every run so far; recall has ranged from 25% to 92%** (see `backend/evals/last_run_results.json` for the latest). The recall variance itself is informative — some of it is genuine model non-determinism (gpt-4o at temperature 0 isn't perfectly deterministic), and a meaningful chunk of the early low numbers were nodes silently failing under rate limits and being scored as "not flagged" by default rather than excluded. Recall trended up substantially (to 92%) once the retry/backoff and the `aggregate`/`write_memo` race were fixed — which is itself evidence that some of what looked like "the model missed it" was actually "the call never completed." I'd treat precision and hallucination as the trustworthy signal here, and recall as directionally correct but worth averaging over several runs rather than quoting a single number.
 
 ## Prompt caching
 
 `fact_checker_user_prompt` puts the ~2,700-token block of source documents *before* the per-call varying claim, specifically so OpenAI's automatic prefix-based caching can apply across the fact-checking fan-out (6 calls per run, same documents every time). This wasn't part of the original design — it came out of thinking about cost/latency once the fan-out pattern was in place — and is the kind of thing that's easy to miss if you don't think about prompt structure as a function of what's static vs. variable per call.
 
+## UI
+
+Built last, after the backend had already been debugged against the real API: a judicial-memo callout, summary counts, and per-citation/per-fact cards with color-coded badges and confidence percentages, replacing the scaffold's raw `JSON.stringify` dump. No new dependencies (plain CSS) — deliberately, since the rest of the project also avoids adding frameworks beyond what's load-bearing. Building it last also caught a latent bug in the original scaffold: it read `data.report` from the response, but `/analyze` returns the `AnalysisReport` directly, not wrapped in a `report` key — the scaffold's own raw-JSON view would have silently shown `undefined`.
+
+I couldn't get an automated screenshot of it in this sandbox (no Playwright/`chromium-cli` available, and installing a headless Chromium felt disproportionate to verifying a CSS layout), so the visual check was done by the person I was building this for, running `npm run dev` locally — not by me.
+
 ## What's not done, and why
 
-- **UI.** The frontend is still the unmodified Vite scaffold. This was a deliberate scope cut: it's a different skillset/concern from the agent pipeline, and I'd rather ship a backend that's been genuinely debugged against the real API than split attention and ship a shallow version of both.
 - **Orchestration resilience beyond what's here.** Retry + error surfacing + the join fix cover the failure modes I actually hit. I haven't load-tested concurrency limits or added a circuit breaker for sustained outages — diminishing returns for a fixed two-document-set demo.
 - **A from-scratch case-law lookup.** The Verifier and Confidence Scorer rely entirely on the model's parametric legal knowledge. A production version of this would want real case-law retrieval (e.g. a citator API) rather than trusting the model's memory of what a 1993 case actually held.
+- **A confidence interval on recall.** I'm reporting individual eval runs rather than an average over several — see the recall variance discussed above.
 
-If I had another pass, I'd spend it on the UI next, then on re-running the eval enough times to put a confidence interval on the recall number instead of reporting a single run.
+If I had another pass, I'd spend it re-running the eval enough times to put a real confidence interval on the recall number, and on the low-confidence footnote citations in the golden set — right now "expected: flagged" for those is closer to an informed guess than a verified fact.
