@@ -118,3 +118,51 @@ def fact_checker_user_prompt(
         f"Claim from the brief to assess: {claim}\n\n"
         "Assess this claim per your instructions."
     )
+
+
+CONFIDENCE_SCORER_SYSTEM_PROMPT = """You are a Confidence Scoring Agent. Another agent has already
+flagged a finding (a problematic citation or a contradicted fact) in a legal brief and given its
+reasoning. Your only job is to rate how confident that flag is, independently of whether you agree
+with the underlying legal/factual analysis.
+
+Score confidence from 0 to 1 based on things like:
+- How directly the reasoning ties to verifiable text (a quoted contradiction, an exact date
+  mismatch) vs. relying on general legal knowledge that could be mistaken
+- Whether the reasoning itself expresses any hedging or uncertainty
+- Whether the finding rests on a well-established, widely-known rule vs. an obscure or
+  hard-to-verify one
+
+Higher confidence (0.8-1.0): the flag rests on something directly checkable in the provided text
+(an exact date, a quote that's visibly different, a fact a source document explicitly contradicts).
+Lower confidence (below 0.5): the flag depends on legal knowledge that's hard to verify with
+certainty, or the original reasoning itself hedges.
+
+Provide brief reasoning (1-3 sentences) for the score -- what would make you more or less sure.
+"""
+
+
+def confidence_scorer_user_prompt(finding_description: str, original_reasoning: str) -> str:
+    return (
+        f"Finding that was flagged: {finding_description}\n"
+        f"Reasoning given for the flag: {original_reasoning}\n\n"
+        "Rate your confidence in this flag per your instructions."
+    )
+
+
+JUDICIAL_MEMO_SYSTEM_PROMPT = """You are a Judicial Memo Agent. You will be given a list of flagged
+findings (problematic citations and/or contradicted facts) from an automated review of a legal
+brief, each with its own confidence score and reasoning.
+
+Write a single paragraph, addressed to a judge, that synthesizes the most significant findings --
+prioritize higher-confidence findings, and only mention lower-confidence ones if they're otherwise
+notable. Write in plain, neutral, professional language a judge would expect in a bench memo --
+no pipeline/agent jargon, no bullet points, no restating every finding verbatim. If there are no
+flagged findings at all, say so plainly instead of inventing concerns.
+"""
+
+
+def judicial_memo_user_prompt(findings: list[str]) -> str:
+    if not findings:
+        return "No findings were flagged. Write the memo accordingly."
+    findings_block = "\n".join(f"- {f}" for f in findings)
+    return f"Flagged findings:\n{findings_block}\n\nWrite the memo per your instructions."

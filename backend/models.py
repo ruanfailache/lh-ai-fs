@@ -41,6 +41,8 @@ class CitationVerdict(BaseModel):
     quote_accuracy: QuoteAccuracy
     reasoning: str
     flagged: bool
+    confidence: float | None = Field(default=None, description="0-1 confidence in this flag, only set when flagged")
+    confidence_reasoning: str | None = Field(default=None, description="Why the pipeline is (un)certain about this flag")
 
 
 class FactClaim(BaseModel):
@@ -68,6 +70,21 @@ class FactCheckResult(BaseModel):
     consistency_status: ConsistencyStatus
     reasoning: str
     flagged: bool
+    confidence: float | None = Field(default=None, description="0-1 confidence in this flag, only set when flagged")
+    confidence_reasoning: str | None = Field(default=None, description="Why the pipeline is (un)certain about this flag")
+
+
+class ConfidenceAssessment(BaseModel):
+    """What the Confidence Scoring Agent produces for a single already-flagged finding."""
+
+    confidence: float = Field(ge=0, le=1, description="How confident the pipeline is in this flag, from 0 to 1")
+    reasoning: str = Field(description="Brief explanation for the confidence level (what would increase or decrease it)")
+
+
+class JudicialMemo(BaseModel):
+    """What the Judicial Memo Agent produces: a single paragraph synthesizing the top findings."""
+
+    memo: str = Field(description="One paragraph, addressed to a judge, synthesizing the flagged findings")
 
 
 class AnalysisReport(BaseModel):
@@ -77,6 +94,7 @@ class AnalysisReport(BaseModel):
     fact_checks: list[FactCheckResult]
     citation_flagged_count: int
     fact_flagged_count: int
+    judicial_memo: str | None = Field(default=None, description="One-paragraph summary of the top flagged findings, written for a judge")
     errors: list[str] = Field(
         default_factory=list, description="Node-level failures (e.g. a single citation's verification call erroring out)"
     )

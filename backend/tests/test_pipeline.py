@@ -2,9 +2,11 @@ from llm import FakeStructuredLLM
 from models import (
     Citation,
     CitationList,
+    ConfidenceAssessment,
     ConsistencyAssessment,
     FactClaim,
     FactClaimList,
+    JudicialMemo,
     VerdictAssessment,
 )
 from pipeline import run_pipeline
@@ -15,6 +17,8 @@ DOCUMENTS = {
     "medical_records_excerpt": "dummy medical records text",
     "witness_statement": "dummy witness statement text",
 }
+
+DEFAULT_MEMO = JudicialMemo(memo="This is the synthesized memo for the judge.")
 
 
 def make_fake_llm() -> FakeStructuredLLM:
@@ -96,13 +100,28 @@ def make_fake_llm() -> FakeStructuredLLM:
                 return result
         raise AssertionError(f"No fake fact check registered for prompt: {prompt}")
 
-    # extract_citations/extract_facts only run once each, so plain FIFO lists work there.
+    confidence_by_needle = {
+        "Privette": ConfidenceAssessment(confidence=0.9, reasoning="Well-known doctrine with a clearly altered quote."),
+        "March 14": ConfidenceAssessment(confidence=0.95, reasoning="Exact date mismatch across three source documents."),
+        "PPE": ConfidenceAssessment(confidence=0.85, reasoning="Both source documents explicitly describe PPE being worn."),
+    }
+
+    def confidence_matcher(messages: list[dict]) -> ConfidenceAssessment:
+        prompt = messages[-1]["content"]
+        for needle, result in confidence_by_needle.items():
+            if needle in prompt:
+                return result
+        raise AssertionError(f"No fake confidence assessment registered for prompt: {prompt}")
+
+    # extract_citations/extract_facts/write_memo only run once each, so plain FIFO lists work there.
     return FakeStructuredLLM(
         {
             "CitationList": [citations],
             "VerdictAssessment": verify_matcher,
             "FactClaimList": [facts],
             "ConsistencyAssessment": fact_check_matcher,
+            "ConfidenceAssessment": confidence_matcher,
+            "JudicialMemo": [DEFAULT_MEMO],
         }
     )
 
@@ -154,6 +173,26 @@ def test_pipeline_computes_flagged_counts():
     assert report.fact_flagged_count == 2
 
 
+def test_pipeline_only_scores_confidence_for_flagged_findings():
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
+
+    verdict_by_id = {v.citation_id: v for v in report.verdicts}
+    check_by_id = {c.fact_id: c for c in report.fact_checks}
+
+    assert verdict_by_id["cite-1"].confidence == 0.9
+    assert verdict_by_id["cite-1"].confidence_reasoning is not None
+    assert verdict_by_id["cite-2"].confidence is None  # not flagged -- never scored
+
+    assert check_by_id["fact-1"].confidence == 0.95
+    assert check_by_id["fact-2"].confidence == 0.85
+
+
+def test_pipeline_writes_judicial_memo():
+    report = run_pipeline(DOCUMENTS, llm=make_fake_llm())
+
+    assert report.judicial_memo == DEFAULT_MEMO.memo
+
+
 def test_pipeline_surfaces_node_failures_without_dropping_the_rest():
     citations = CitationList(
         citations=[
@@ -177,6 +216,7 @@ def test_pipeline_surfaces_node_failures_without_dropping_the_rest():
             "VerdictAssessment": explode,
             "FactClaimList": [FactClaimList(facts=[])],
             "ConsistencyAssessment": [],
+            "JudicialMemo": [DEFAULT_MEMO],
         }
     )
 
@@ -199,6 +239,7 @@ def test_pipeline_survives_extraction_failure():
             "VerdictAssessment": [],
             "FactClaimList": [FactClaimList(facts=[])],
             "ConsistencyAssessment": [],
+            "JudicialMemo": [DEFAULT_MEMO],
         }
     )
 
@@ -207,3 +248,62 @@ def test_pipeline_survives_extraction_failure():
     assert report.citations == []
     assert report.verdicts == []
     assert any("Citation extraction failed" in err for err in report.errors)
+
+
+def test_pipeline_survives_confidence_scoring_failure():
+    citations = CitationList(
+        citations=[
+            Citation(
+                id="cite-1",
+                raw_text="Privette v. Superior Court",
+                case_name="Privette v. Superior Court",
+                citation_string="5 Cal.4th 689",
+                proposition="p",
+                quoted_text=None,
+            )
+        ]
+    )
+    verdict = VerdictAssessment(
+        support_status="contradicts", quote_accuracy="altered", reasoning="overstated", flagged=True
+    )
+
+    def explode_confidence(_messages: list[dict]) -> ConfidenceAssessment:
+        raise RuntimeError("simulated confidence scoring failure")
+
+    llm = FakeStructuredLLM(
+        {
+            "CitationList": [citations],
+            "VerdictAssessment": [verdict],
+            "FactClaimList": [FactClaimList(facts=[])],
+            "ConsistencyAssessment": [],
+            "ConfidenceAssessment": explode_confidence,
+            "JudicialMemo": [DEFAULT_MEMO],
+        }
+    )
+
+    report = run_pipeline(DOCUMENTS, llm=llm)
+
+    assert len(report.verdicts) == 1
+    assert report.verdicts[0].flagged is True
+    assert report.verdicts[0].confidence is None
+    assert any("Confidence scoring failed" in err for err in report.errors)
+
+
+def test_pipeline_survives_memo_failure():
+    def explode_memo(_messages: list[dict]) -> JudicialMemo:
+        raise RuntimeError("simulated memo failure")
+
+    llm = FakeStructuredLLM(
+        {
+            "CitationList": [CitationList(citations=[])],
+            "VerdictAssessment": [],
+            "FactClaimList": [FactClaimList(facts=[])],
+            "ConsistencyAssessment": [],
+            "JudicialMemo": explode_memo,
+        }
+    )
+
+    report = run_pipeline(DOCUMENTS, llm=llm)
+
+    assert report.judicial_memo is None
+    assert any("Judicial memo generation failed" in err for err in report.errors)
